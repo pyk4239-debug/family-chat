@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="가족채팅">
 <meta name="theme-color" content="#1E2637">
 <link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgcng9IjQwIiBmaWxsPSIjRkVFNTAwIi8+PHRleHQgeD0iOTYiIHk9IjEyOCIgZm9udC1zaXplPSIxMDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiPvCfkrY8L3RleHQ+PC9zdmc+">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <title>가족 채팅</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
@@ -135,7 +135,7 @@
   }
   .msg-time{font-size:11px;color:rgba(0,0,0,.35);white-space:nowrap;}
   .msg-meta{display:flex;flex-direction:column;align-items:flex-end;gap:2px;justify-content:flex-end;}
-  .msg-read{font-size:11px;color:#4A90D9;white-space:nowrap;font-weight:600;}
+  .msg-unread{font-size:11px;color:#F5A623;white-space:nowrap;font-weight:700;line-height:1;}
   .bubble img{max-width:100%;border-radius:10px;display:block;cursor:pointer;}
 
   /* 입력창 - 모바일 키보드 대응 핵심 */
@@ -273,7 +273,6 @@
       <button class="input-btn" onclick="document.getElementById('file-input').click()">📎</button>
       <input type="file" id="file-input" accept="image/*" onchange="sendImage(event)">
       <textarea id="msg-input" placeholder="메시지를 입력하세요" rows="1"
-        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"
         oninput="autoResize(this)"></textarea>
       <button class="send-btn" onclick="sendMsg()">➤</button>
     </div>
@@ -449,12 +448,14 @@ function renderMessages(msgs, keys=[]){
     const sender=getMember(msg.senderId);
     const showAvatar=!isMe&&(i===0||msgs[i-1]?.senderId!==msg.senderId);
 
-    // 읽음 표시: 상대방이 읽었는지
+    // 읽음 표시: 아직 안 읽은 멤버 수 표시 (카톡 방식)
     let readInfo='';
-    if(isMe){
-      const readers=Object.keys(msg.readBy||{}).filter(id=>id!==currentUser.id);
-      if(readers.length>0){
-        readInfo=`<div class="msg-read">읽음</div>`;
+    if(isMe && currentRoom){
+      const roomMembers=currentRoom.members.filter(id=>id!==currentUser.id);
+      const readBy=msg.readBy||{};
+      const unreadCount=roomMembers.filter(id=>!readBy[id]).length;
+      if(unreadCount>0){
+        readInfo=`<div class="msg-unread">${unreadCount}</div>`;
       }
     }
 
