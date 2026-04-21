@@ -240,8 +240,8 @@
 
   /* 모바일 대응 */
   @media (max-width: 600px) {
-    #sidebar { width: 100%; position: fixed; z-index: 100; height: 100vh; transform: translateX(-100%); transition: transform 0.3s; }
-    #sidebar.open { transform: translateX(0); }
+    #sidebar { width: 100%; position: fixed; z-index: 100; height: 100vh; transform: translateX(0); transition: transform 0.3s; }
+    #sidebar.hidden { transform: translateX(-100%); }
     #chat-area { width: 100%; }
     .back-btn { display: flex !important; }
   }
@@ -475,8 +475,8 @@ window.openRoom = function(room) {
   document.getElementById('header-title').textContent = info.name;
   document.getElementById('header-subtitle').textContent = room.isGroup ? `${room.members.length}명` : '일대일 채팅';
 
-  // 모바일: 사이드바 닫기
-  document.getElementById('sidebar').classList.remove('open');
+  // 모바일: 사이드바 숨기기
+  document.getElementById('sidebar').classList.add('hidden');
 
   renderRoomList();
   if (msgListener) msgListener();
@@ -487,7 +487,7 @@ window.openRoom = function(room) {
 };
 
 window.closeChatMobile = function() {
-  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar').classList.remove('hidden');
   document.getElementById('chat-main').classList.remove('visible');
   document.getElementById('empty-chat').style.display = 'flex';
 };
