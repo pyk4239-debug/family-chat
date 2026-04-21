@@ -1,6 +1,6 @@
 {
-  "name": "가족 채팅",
-  "short_name": "가족채팅",
+  "name": "F-chat",
+  "short_name": "F-chat",
   "description": "우리 가족 전용 채팅 앱",
   "start_url": "/",
   "display": "standalone",
