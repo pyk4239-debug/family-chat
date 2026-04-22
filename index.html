@@ -215,8 +215,19 @@
   #install-btn{background:var(--yellow);color:#333;border:none;border-radius:10px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;font-family:'Noto Sans KR',sans-serif;}
   #install-close{background:none;border:none;color:rgba(255,255,255,.5);font-size:20px;cursor:pointer;padding:0 4px;}
 
-  #file-input{display:none;}
-  #photo-input{display:none;}
+  /* 메시지 삭제 팝업 */
+  .msg-ctx{
+    position:fixed;z-index:600;background:#fff;border-radius:14px;
+    box-shadow:0 8px 30px rgba(0,0,0,.2);overflow:hidden;min-width:140px;
+  }
+  .msg-ctx button{
+    display:block;width:100%;padding:14px 20px;border:none;background:none;
+    font-family:'Noto Sans KR',sans-serif;font-size:14px;text-align:left;cursor:pointer;
+  }
+  .msg-ctx button:hover{background:#f5f5f5;}
+  .msg-ctx button.del{color:#e53935;}
+  #ctx-overlay{position:fixed;inset:0;z-index:599;display:none;}
+  #ctx-overlay.show{display:block;}
   #chat-main{display:none;flex-direction:column;flex:1;overflow:hidden;}
   #chat-main.visible{display:flex;}
   .back-btn{display:none;background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 4px;}
@@ -232,6 +243,13 @@
 </style>
 </head>
 <body>
+
+<!-- 메시지 삭제 컨텍스트 메뉴 -->
+<div id="ctx-overlay" onclick="closeCtx()"></div>
+<div class="msg-ctx" id="msg-ctx" style="display:none">
+  <button class="del" onclick="confirmDeleteMsg()">🗑️ 삭제</button>
+  <button onclick="closeCtx()">취소</button>
+</div>
 
 <!-- 로그인 -->
 <div id="login-screen">
@@ -324,7 +342,7 @@
         <div class="room-title" id="header-title"></div>
         <div class="sub" id="header-subtitle"></div>
       </div>
-      <button id="header-del-btn" onclick="deleteMemoRoom()" style="display:none;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:10px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;">🗑️ 전체삭제</button>
+
     </div>
     <div class="chat-messages" id="chat-messages"></div>
     <div class="chat-input-area">
@@ -811,27 +829,21 @@ window.openRoom = function(room) {
 
   if (msgListener) msgListener();
   msgListener = onValue(ref(db, `rooms/${room.id}/messages`), snap => {
-    const msgs = snap.val() ? Object.values(snap.val()) : [];
-    renderMessages(msgs);
-    if (snap.val()) {
-      Object.entries(snap.val()).forEach(([key, msg]) => {
-        if (msg.senderId !== currentUser.id && !(msg.readBy||{})[currentUser.id]) {
-          update(ref(db, `rooms/${room.id}/messages/${key}/readBy`), { [currentUser.id]: true });
-        }
-      });
-    }
-    // 항상 최하단으로 스크롤
+    const raw = snap.val() || {};
+    const msgs = Object.values(raw);
+    const keys = Object.keys(raw);
+    renderMessages(msgs, keys);
+    Object.entries(raw).forEach(([key, msg]) => {
+      if (msg.senderId !== currentUser.id && !(msg.readBy||{})[currentUser.id]) {
+        update(ref(db, `rooms/${room.id}/messages/${key}/readBy`), { [currentUser.id]: true });
+      }
+    });
     const c = document.getElementById('chat-messages');
     setTimeout(() => { c.scrollTop = c.scrollHeight; }, 50);
   });
 };
 
-// 나와의 채팅 전체 삭제
-window.deleteMemoRoom = async function() {
-  if (!currentRoom?.isMemo) return;
-  if (!confirm('모든 메모를 삭제할까요?')) return;
-  await set(ref(db, `rooms/${currentRoom.id}/messages`), null);
-};
+
 
 window.closeChatMobile = function() {
   document.getElementById('sidebar').classList.remove('hidden');
@@ -843,13 +855,14 @@ window.closeChatMobile = function() {
 
 // ===== 메시지 렌더 =====
 let isFirstLoad = true;
-function renderMessages(msgs) {
+function renderMessages(msgs, keys=[]) {
   const c = document.getElementById('chat-messages');
   const atBottom = isFirstLoad || c.scrollHeight - c.scrollTop - c.clientHeight < 80;
   isFirstLoad = false;
   c.innerHTML = '';
   let lastDate = '';
   msgs.forEach((msg, i) => {
+    const msgKey = keys[i] || null;
     const d = new Date(msg.timestamp||Date.now());
     const ds = `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;
     if (ds !== lastDate) {
@@ -898,6 +911,20 @@ function renderMessages(msgs) {
     }
 
     row.innerHTML = `${avatarHtml}<div class="msg-info">${showAvatar&&!isMe?`<div class="msg-sender">${memberName(msg.senderId)}</div>`:''}<div class="msg-content"><div class="bubble ${isMe?'me':'other'}">${bc}</div><div class="msg-meta">${readInfo}<div class="msg-time">${formatTime(msg.timestamp)}</div></div></div></div>`;
+
+    // 나와의 채팅: 말풍선 탭하면 삭제 메뉴
+    if (currentRoom?.isMemo && msgKey) {
+      const bubble = row.querySelector('.bubble');
+      bubble.style.cursor = 'pointer';
+      bubble.addEventListener('click', e => showCtx(e, msgKey));
+      bubble.addEventListener('touchstart', e => {
+        const touch = e.touches[0];
+        // 롱프레스 아닌 일반 탭도 작동
+        bubble._tapTimer = setTimeout(() => showCtx(e, msgKey), 0);
+      });
+      bubble.addEventListener('touchend', () => clearTimeout(bubble._tapTimer));
+    }
+
     c.appendChild(row);
   });
   if (atBottom || msgs.length <= 1) c.scrollTop = c.scrollHeight;
@@ -928,6 +955,32 @@ window.sendImage = function(e) {
 };
 
 window.previewImg = src => { document.getElementById('img-preview-src').src=src; document.getElementById('img-preview').classList.add('show'); };
+
+// ===== 메시지 삭제 (나와의 채팅) =====
+let ctxMsgKey = null;
+window.closeCtx = function() {
+  document.getElementById('msg-ctx').style.display = 'none';
+  document.getElementById('ctx-overlay').classList.remove('show');
+  ctxMsgKey = null;
+};
+function showCtx(e, key) {
+  e.preventDefault(); e.stopPropagation();
+  ctxMsgKey = key;
+  const menu = document.getElementById('msg-ctx');
+  menu.style.display = 'block';
+  document.getElementById('ctx-overlay').classList.add('show');
+  // 위치: 터치/클릭 위치 기준
+  const x = e.touches ? e.touches[0].clientX : e.clientX;
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
+  const mw = 140, mh = 96;
+  menu.style.left = Math.min(x, window.innerWidth - mw - 8) + 'px';
+  menu.style.top = Math.min(y, window.innerHeight - mh - 8) + 'px';
+}
+window.confirmDeleteMsg = async function() {
+  if (!ctxMsgKey || !currentRoom?.isMemo) return;
+  await set(ref(db, `rooms/${currentRoom.id}/messages/${ctxMsgKey}`), null);
+  closeCtx();
+};
 window.autoResize = el => { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,100)+'px'; };
 // ===== 브라우저 알림 =====
 let lastMsgTimestamps = {};
