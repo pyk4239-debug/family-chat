@@ -126,9 +126,38 @@
   .room-name{font-size:14px;font-weight:600;margin-bottom:3px;}
   .room-preview{font-size:12px;opacity:.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .room-time{font-size:11px;opacity:.4;white-space:nowrap;}
-  .member-panel{padding:8px 16px 16px;border-top:1px solid rgba(255,255,255,.08);flex-shrink:0;}
-  .member-panel-title{font-size:11px;opacity:.4;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;}
-  .member-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;margin:3px 3px 3px 0;background:rgba(255,255,255,.08);border-radius:20px;font-size:12px;}
+  .member-panel{flex:1;overflow-y:auto;padding:12px 12px 20px;}
+  .member-panel-title{font-size:11px;opacity:.4;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px;padding:0 4px;}
+  /* 가족 카드 */
+  .member-card{
+    background:rgba(255,255,255,.07);border-radius:16px;
+    padding:16px;margin-bottom:10px;display:flex;flex-direction:column;gap:10px;
+  }
+  .member-card-top{display:flex;align-items:center;gap:12px;}
+  .member-card-photo{
+    width:52px;height:52px;border-radius:50%;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    font-size:22px;font-weight:700;color:#fff;cursor:pointer;position:relative;overflow:hidden;
+  }
+  .member-card-photo img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+  .member-card-photo .photo-edit{
+    position:absolute;inset:0;background:rgba(0,0,0,.4);
+    display:none;align-items:center;justify-content:center;font-size:16px;border-radius:50%;
+  }
+  .member-card-photo:hover .photo-edit{display:flex;}
+  .member-card-info{flex:1;}
+  .member-card-name{font-size:15px;font-weight:700;}
+  .member-card-online{font-size:12px;opacity:.5;margin-top:2px;}
+  .member-card-online.on{color:#52C788;opacity:1;}
+  .member-card-actions{display:flex;gap:8px;}
+  .card-btn{
+    flex:1;padding:8px 4px;border:none;border-radius:10px;
+    font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:600;
+    cursor:pointer;transition:opacity .15s;display:flex;align-items:center;justify-content:center;gap:4px;
+  }
+  .card-btn:active{opacity:.7;}
+  .card-btn.chat{background:var(--yellow);color:#333;}
+  .card-btn.memo{background:rgba(255,255,255,.12);color:#fff;}
 
   /* ===== 채팅 ===== */
   #chat-area{flex:1;display:flex;flex-direction:column;background:var(--bg);overflow:hidden;min-width:0;}
@@ -159,6 +188,8 @@
   .msg-meta{display:flex;flex-direction:column;align-items:flex-end;gap:2px;justify-content:flex-end;}
   .msg-unread{font-size:11px;color:#4A90D9;white-space:nowrap;font-weight:600;}
   .bubble img{max-width:100%;border-radius:10px;display:block;cursor:pointer;}
+  .bubble{-webkit-user-select:none;user-select:none;}
+  .chat-messages{-webkit-user-select:none;user-select:none;}
   .chat-input-area{
     display:flex;align-items:flex-end;gap:8px;background:rgba(255,255,255,.95);
     border-top:1px solid rgba(0,0,0,.08);padding:10px 12px;
@@ -185,6 +216,7 @@
   #install-close{background:none;border:none;color:rgba(255,255,255,.5);font-size:20px;cursor:pointer;padding:0 4px;}
 
   #file-input{display:none;}
+  #photo-input{display:none;}
   #chat-main{display:none;flex-direction:column;flex:1;overflow:hidden;}
   #chat-main.visible{display:flex;}
   .back-btn{display:none;background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 4px;}
@@ -266,7 +298,18 @@
   <div class="room-list" id="room-list"></div>
   <div class="member-panel" id="member-panel" style="display:none">
     <div class="member-panel-title">가족 구성원</div>
-    <div id="member-chips"></div>
+    <div id="member-cards"></div>
+    <!-- 나만의 메모방 -->
+    <div class="member-card" style="background:rgba(254,229,0,.1);border:1px solid rgba(254,229,0,.2);cursor:pointer;" onclick="openMemoRoom()">
+      <div class="member-card-top">
+        <div class="member-card-photo" style="background:#555;font-size:22px;">📝</div>
+        <div class="member-card-info">
+          <div class="member-card-name">나만의 메모</div>
+          <div class="member-card-online">혼자 쓰는 메모장</div>
+        </div>
+        <div style="font-size:20px;opacity:.5;">→</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -286,6 +329,7 @@
     <div class="chat-input-area">
       <button class="input-btn" onclick="document.getElementById('file-input').click()">📎</button>
       <input type="file" id="file-input" accept="image/*" onchange="sendImage(event)">
+      <input type="file" id="photo-input" accept="image/*" onchange="uploadProfilePhoto(event)">
       <textarea id="msg-input" placeholder="메시지를 입력하세요" rows="1" oninput="autoResize(this)"></textarea>
       <button class="send-btn" onclick="sendMsg()">➤</button>
     </div>
@@ -542,25 +586,48 @@ function initApp() {
   set(pr, { online:true, name:currentUser.name });
   onDisconnect(pr).set({ online:false });
 
-  // 멤버 이름 변경 실시간 감지
+  // 멤버 이름/사진 변경 실시간 감지
   MEMBER_DEFS.forEach(def => {
-    onValue(ref(db, `members/${def.id}/name`), snap => {
-      if (snap.val()) members[def.id].name = snap.val();
-      renderMemberChips();
+    onValue(ref(db, `members/${def.id}`), snap => {
+      const data = snap.val() || {};
+      if (data.name) members[def.id].name = data.name;
+      if (data.photo !== undefined) members[def.id].photo = data.photo;
+      renderMemberCards();
       renderRoomList();
-      // 내 이름이 바뀐 경우 헤더 갱신
-      if (def.id === currentUser.id && snap.val()) {
-        currentUser.name = snap.val();
-        document.getElementById('my-name-display').textContent = snap.val();
-        document.getElementById('my-avatar').textContent = avatarLetter(snap.val());
+      if (def.id === currentUser.id && data.name) {
+        currentUser.name = data.name;
+        document.getElementById('my-name-display').textContent = data.name;
+        const av = document.getElementById('my-avatar');
+        if (data.photo) {
+          av.innerHTML = `<img src="${data.photo}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">`;
+        } else {
+          av.textContent = avatarLetter(data.name);
+        }
       }
     });
   });
 
+  // 온라인 상태 실시간 감지
+  MEMBER_DEFS.forEach(def => {
+    onValue(ref(db, `presence/${def.id}/online`), snap => {
+      onlineStatus[def.id] = snap.val() === true;
+      renderMemberCards();
+    });
+  });
+
   renderRoomList();
+  renderMemberCards();
   ROOMS.filter(r=>r.members.includes(currentUser.id)).forEach(room =>
     onValue(ref(db, `rooms/${room.id}/messages`), () => renderRoomList())
   );
+
+  // 브라우저 알림 권한 요청
+  if ('Notification' in window && Notification.permission === 'default') {
+    setTimeout(() => Notification.requestPermission(), 2000);
+  }
+
+  // 모든 방 새 메시지 알림 감지
+  setupNotifications();
 
   setTimeout(() => { if(window._deferredPrompt) document.getElementById('install-banner').classList.add('show'); }, 3000);
 }
@@ -579,27 +646,95 @@ window.saveName = async function() {
   document.getElementById('name-modal').classList.add('hidden');
 };
 
-// ===== 멤버 칩 =====
-function renderMemberChips() {
-  const c = document.getElementById('member-chips');
+// ===== 가족 카드 렌더 =====
+let onlineStatus = {};
+function renderMemberCards() {
+  const c = document.getElementById('member-cards');
   c.innerHTML = '';
   MEMBER_DEFS.forEach(def => {
-    const chip = document.createElement('div');
-    chip.className = 'member-chip';
-    const av = document.createElement('span');
-    av.style.cssText = `display:inline-flex;width:20px;height:20px;border-radius:50%;background:${def.color};align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;`;
-    av.textContent = avatarLetter(members[def.id].name);
-    chip.appendChild(av);
-    chip.appendChild(document.createTextNode(' ' + members[def.id].name));
-    c.appendChild(chip);
+    if (def.id === currentUser.id) return; // 본인 제외
+    const card = document.createElement('div');
+    card.className = 'member-card';
+    const isOnline = onlineStatus[def.id] === true;
+    const photo = members[def.id]?.photo || null;
+    const photoHtml = photo
+      ? `<img src="${photo}" alt="">`
+      : `<span>${avatarLetter(memberName(def.id))}</span>`;
+    const editHtml = def.id === currentUser.id
+      ? `<div class="photo-edit">📷</div>` : '';
+    card.innerHTML = `
+      <div class="member-card-top">
+        <div class="member-card-photo" style="background:${def.color}" onclick="editPhoto('${def.id}')">
+          ${photoHtml}
+          <div class="photo-edit">📷</div>
+        </div>
+        <div class="member-card-info">
+          <div class="member-card-name">${memberName(def.id)}</div>
+          <div class="member-card-online ${isOnline?'on':''}">${isOnline?'● 온라인':'○ 오프라인'}</div>
+        </div>
+      </div>
+      <div class="member-card-actions">
+        <button class="card-btn chat" onclick="quickDM('${def.id}')">💬 채팅</button>
+      </div>`;
+    c.appendChild(card);
   });
 }
 
+// 내 사진 수정
+window.editPhoto = function(id) {
+  if (id !== currentUser.id) return; // 본인만 수정 가능
+  document.getElementById('photo-input').click();
+};
+
+window.uploadProfilePhoto = function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    await set(ref(db, `members/${currentUser.id}/photo`), ev.target.result);
+    members[currentUser.id].photo = ev.target.result;
+    // 내 사이드바 아바타도 갱신
+    const av = document.getElementById('my-avatar');
+    av.innerHTML = `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">`;
+    renderMemberCards();
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+};
+
+// 빠른 1:1 채팅
+window.quickDM = function(otherId) {
+  const ids = [currentUser.id, otherId].sort();
+  const roomId = ids[0]==='member1'&&ids[1]==='member2' ? 'dm_1_2'
+    : ids[0]==='member1'&&ids[1]==='member3' ? 'dm_1_3'
+    : ids[0]==='member1'&&ids[1]==='member4' ? 'dm_1_4'
+    : ids[0]==='member2'&&ids[1]==='member3' ? 'dm_2_3'
+    : ids[0]==='member2'&&ids[1]==='member4' ? 'dm_2_4'
+    : 'dm_3_4';
+  const room = ROOMS.find(r => r.id === roomId);
+  if (room) { switchTab('chats'); openRoom(room); }
+};
+
+// 나만의 메모방
+window.openMemoRoom = function() {
+  const memoRoom = {
+    id: `memo_${currentUser.id}`,
+    name: '나만의 메모',
+    isGroup: false,
+    isMemo: true,
+    members: [currentUser.id]
+  };
+  switchTab('chats');
+  openRoom(memoRoom);
+};
+
 // ===== 방 정보 =====
 function getRoomInfo(room) {
+  if (room.isMemo) return { name:'나만의 메모', color:'#888', letter:'📝' };
   if (room.isGroup) return { name: room.name, color:'#4A90D9', letter:'家' };
   const otherId = room.members.find(m => m !== currentUser.id);
-  return { name: memberName(otherId), color: memberColor(otherId), letter: avatarLetter(memberName(otherId)) };
+  const photo = members[otherId]?.photo || null;
+  return { name: memberName(otherId), color: memberColor(otherId), letter: avatarLetter(memberName(otherId)), photo };
 }
 
 // ===== 방 목록 =====
@@ -763,10 +898,67 @@ window.sendImage = function(e) {
 
 window.previewImg = src => { document.getElementById('img-preview-src').src=src; document.getElementById('img-preview').classList.add('show'); };
 window.autoResize = el => { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,100)+'px'; };
+// ===== 브라우저 알림 =====
+let lastMsgTimestamps = {};
+function setupNotifications() {
+  ROOMS.filter(r => r.members.includes(currentUser.id)).forEach(room => {
+    onValue(ref(db, `rooms/${room.id}/messages`), snap => {
+      if (!snap.val()) return;
+      const msgs = Object.values(snap.val());
+      const last = msgs[msgs.length - 1];
+      if (!last) return;
+
+      // 앱이 포그라운드이고 현재 방이면 알림 안 띄움
+      const isCurrentRoom = currentRoom?.id === room.id;
+      const isNew = last.timestamp > (lastMsgTimestamps[room.id] || 0);
+      const isFromOther = last.senderId !== currentUser.id;
+
+      if (isNew && isFromOther) {
+        lastMsgTimestamps[room.id] = last.timestamp;
+        if (!isCurrentRoom || document.hidden) {
+          sendNotification(room, last);
+        }
+      }
+
+      // 앱 배지 (안읽은 메시지 수)
+      updateBadge(msgs);
+    });
+  });
+}
+
+function sendNotification(room, msg) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const info = getRoomInfo(room);
+  const senderName = memberName(msg.senderId);
+  const body = msg.type === 'image' ? '📷 사진을 보냈습니다' : msg.text;
+  const title = room.isGroup ? `${info.name} - ${senderName}` : senderName;
+  const n = new Notification(title, {
+    body: body.length > 50 ? body.slice(0,50)+'...' : body,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: room.id,
+    renotify: true,
+  });
+  n.onclick = () => { window.focus(); openRoom(room); n.close(); };
+}
+
+function updateBadge(allMsgs) {
+  let total = 0;
+  ROOMS.filter(r=>r.members.includes(currentUser.id)).forEach(room => {
+    // 각 방에서 내가 안읽은 메시지 (sendNotification 흐름에서 이미 집계)
+  });
+  // navigator.setAppBadge 지원 시
+  if ('setAppBadge' in navigator) {
+    navigator.setAppBadge(total).catch(()=>{});
+  }
+}
+
 window.switchTab = tab => {
   document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',(i===0&&tab==='chats')||(i===1&&tab==='members')));
   document.getElementById('room-list').style.display=tab==='chats'?'block':'none';
-  document.getElementById('member-panel').style.display=tab==='members'?'block':'none';
+  document.getElementById('member-panel').style.display=tab==='members'?'flex':'none';
+  document.getElementById('member-panel').style.flexDirection='column';
+  if(tab==='members') renderMemberCards();
 };
 function formatTime(ts){if(!ts)return'';const d=new Date(ts),h=d.getHours(),m=String(d.getMinutes()).padStart(2,'0');return`${h<12?'오전':'오후'} ${h%12||12}:${m}`;}
 
