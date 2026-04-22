@@ -299,13 +299,13 @@
   <div class="member-panel" id="member-panel" style="display:none">
     <div class="member-panel-title">가족 구성원</div>
     <div id="member-cards"></div>
-    <!-- 나만의 메모방 -->
-    <div class="member-card" style="background:rgba(254,229,0,.1);border:1px solid rgba(254,229,0,.2);cursor:pointer;" onclick="openMemoRoom()">
+    <!-- 나와의 채팅 -->
+    <div class="member-card" style="background:rgba(102,126,234,.15);border:1px solid rgba(102,126,234,.25);cursor:pointer;" onclick="openMemoRoom()">
       <div class="member-card-top">
-        <div class="member-card-photo" style="background:#555;font-size:22px;">📝</div>
+        <div class="member-card-photo" style="background:linear-gradient(135deg,#667eea,#764ba2);font-size:18px;font-weight:700;">나</div>
         <div class="member-card-info">
-          <div class="member-card-name">나만의 메모</div>
-          <div class="member-card-online">혼자 쓰는 메모장</div>
+          <div class="member-card-name">나와의 채팅</div>
+          <div class="member-card-online">나만 보이는 메모장</div>
         </div>
         <div style="font-size:20px;opacity:.5;">→</div>
       </div>
@@ -324,6 +324,7 @@
         <div class="room-title" id="header-title"></div>
         <div class="sub" id="header-subtitle"></div>
       </div>
+      <button id="header-del-btn" onclick="deleteMemoRoom()" style="display:none;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:10px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;">🗑️ 전체삭제</button>
     </div>
     <div class="chat-messages" id="chat-messages"></div>
     <div class="chat-input-area">
@@ -715,11 +716,11 @@ window.quickDM = function(otherId) {
   if (room) { switchTab('chats'); openRoom(room); }
 };
 
-// 나만의 메모방
+// 나와의 채팅방
 window.openMemoRoom = function() {
   const memoRoom = {
     id: `memo_${currentUser.id}`,
-    name: '나만의 메모',
+    name: '나와의 채팅',
     isGroup: false,
     isMemo: true,
     members: [currentUser.id]
@@ -730,7 +731,7 @@ window.openMemoRoom = function() {
 
 // ===== 방 정보 =====
 function getRoomInfo(room) {
-  if (room.isMemo) return { name:'나만의 메모', color:'#888', letter:'📝' };
+  if (room.isMemo) return { name:'나와의 채팅', color:'#888', letter:'나' };
   if (room.isGroup) return { name: room.name, color:'#4A90D9', letter:'家' };
   const otherId = room.members.find(m => m !== currentUser.id);
   const photo = members[otherId]?.photo || null;
@@ -740,12 +741,22 @@ function getRoomInfo(room) {
 // ===== 방 목록 =====
 function renderRoomList() {
   const rooms = ROOMS.filter(r => r.members.includes(currentUser.id));
+  // 나와의 채팅 방 추가
+  const memoRoom = { id:`memo_${currentUser.id}`, name:'나와의 채팅', isGroup:false, isMemo:true, members:[currentUser.id] };
+
   Promise.all(rooms.map(room => new Promise(res => {
     onValue(ref(db, `rooms/${room.id}/messages`), snap => {
       const msgs = snap.val() ? Object.values(snap.val()) : [];
       res({ room, last: msgs[msgs.length-1]||null });
     }, { onlyOnce:true });
-  }))).then(results => {
+  }))).then(async results => {
+    // 나와의 채팅 마지막 메시지
+    const memoSnap = await new Promise(res =>
+      onValue(ref(db, `rooms/${memoRoom.id}/messages`), snap => res(snap), { onlyOnce:true })
+    );
+    const memoMsgs = memoSnap.val() ? Object.values(memoSnap.val()) : [];
+    results.push({ room: memoRoom, last: memoMsgs[memoMsgs.length-1]||null });
+
     results.sort((a,b) => (b.last?.timestamp||0)-(a.last?.timestamp||0));
     const c = document.getElementById('room-list');
     c.innerHTML = '';
@@ -755,13 +766,13 @@ function renderRoomList() {
       item.className = 'room-item' + (currentRoom?.id===room.id?' active':'');
       const avEl = document.createElement('div');
       avEl.className = 'room-avatar-wrap';
-      avEl.style.background = info.color;
+      avEl.style.background = room.isMemo ? 'linear-gradient(135deg,#667eea,#764ba2)' : info.color;
       avEl.textContent = info.letter;
       avEl.style.fontSize = room.isGroup ? '16px' : '18px';
       item.appendChild(avEl);
       const ri = document.createElement('div');
       ri.className = 'room-info';
-      ri.innerHTML = `<div class="room-name">${info.name}</div><div class="room-preview">${last?(last.type==='image'?'📷 사진':last.text):'대화를 시작하세요'}</div>`;
+      ri.innerHTML = `<div class="room-name">${info.name}</div><div class="room-preview">${last?(last.type==='image'?'📷 사진':last.text):'메모를 시작하세요'}</div>`;
       item.appendChild(ri);
       const rt = document.createElement('div');
       rt.className = 'room-time';
@@ -782,13 +793,21 @@ window.openRoom = function(room) {
 
   // 헤더 아바타
   const hav = document.getElementById('header-avatar');
-  hav.style.background = info.color;
+  hav.style.background = room.isMemo ? 'linear-gradient(135deg,#667eea,#764ba2)' : info.color;
   hav.textContent = info.letter;
 
   document.getElementById('header-title').textContent = info.name;
-  document.getElementById('header-subtitle').textContent = room.isGroup ? `${room.members.length}명` : '일대일 채팅';
+  document.getElementById('header-subtitle').textContent =
+    room.isMemo ? '나만 보이는 메모' :
+    room.isGroup ? `${room.members.length}명` : '일대일 채팅';
+
+  // 나와의 채팅: 삭제 버튼 표시
+  const delBtn = document.getElementById('header-del-btn');
+  if (delBtn) delBtn.style.display = room.isMemo ? 'flex' : 'none';
+
   document.getElementById('sidebar').classList.add('hidden');
   renderRoomList();
+  isFirstLoad = true;
 
   if (msgListener) msgListener();
   msgListener = onValue(ref(db, `rooms/${room.id}/messages`), snap => {
@@ -801,7 +820,17 @@ window.openRoom = function(room) {
         }
       });
     }
+    // 항상 최하단으로 스크롤
+    const c = document.getElementById('chat-messages');
+    setTimeout(() => { c.scrollTop = c.scrollHeight; }, 50);
   });
+};
+
+// 나와의 채팅 전체 삭제
+window.deleteMemoRoom = async function() {
+  if (!currentRoom?.isMemo) return;
+  if (!confirm('모든 메모를 삭제할까요?')) return;
+  await set(ref(db, `rooms/${currentRoom.id}/messages`), null);
 };
 
 window.closeChatMobile = function() {
@@ -813,9 +842,11 @@ window.closeChatMobile = function() {
 };
 
 // ===== 메시지 렌더 =====
+let isFirstLoad = true;
 function renderMessages(msgs) {
   const c = document.getElementById('chat-messages');
-  const atBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 80;
+  const atBottom = isFirstLoad || c.scrollHeight - c.scrollTop - c.clientHeight < 80;
+  isFirstLoad = false;
   c.innerHTML = '';
   let lastDate = '';
   msgs.forEach((msg, i) => {
